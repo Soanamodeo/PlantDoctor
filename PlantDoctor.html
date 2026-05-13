@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Plant Doctor App</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Custom Animations */
+    .animate-in { animation-duration: 500ms; animation-fill-mode: forwards; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+    .fade-in { animation-name: fadeIn; }
+    .slide-in-from-bottom-4 { animation-name: slideUp; }
+    .slide-in-from-right-4 { animation-name: slideRight; }
+    .slide-in-from-top-2 { animation-name: slideDown; }
+    .zoom-in { animation-name: zoomIn; }
+    .zoom-in-95 { animation-name: zoomIn95; }
+    
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(1rem); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideRight { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-0.5rem); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes zoomIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes zoomIn95 { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // Provide your Gemini API key here
+    const apiKey = ""; 
+
+    // --- Inlined SVG Icons (Replacing lucide-react dependency) ---
+    const iconPaths = {
+      Camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+      Upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+      Sprout: '<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
+      ShieldAlert: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+      Info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+      Leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
+      Droplets: '<path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7 2.9 7 2.9s-2.14 3.96-3.29 4.89S2 11.09 2 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 1 14 8c2 2.5 2 4.5 2 4.5"/><path d="M17 21.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S17 7.9 17 7.9s-2.14 3.96-3.29 4.89S12 16.09 12 17.25c0 2.22 1.8 4.05 4 4.05z"/>',
+      XCircle: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+      CheckCircle2: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
+      RefreshCw: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+      Loader2: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+      MapPin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+      ChevronDown: '<path d="m6 9 6 6 6-6"/>',
+      ChevronUp: '<path d="m18 15-6-6-6 6"/>',
+      Globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+      Ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+      Lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      Edit2: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+      AlertTriangle: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+      Bug: '<rect width="8" height="14" x="8" y="6" rx="4"/><path d="m19 7-3 2"/><path d="m5 7 3 2"/><path d="m19 19-3-2"/><path d="m5 19 3-2"/><path d="M20 13h-4"/><path d="M4 13h4"/><path d="m10 4 1 2"/><path d="m14 4-1 2"/>',
+      Save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+      ListIcon: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+      ArrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+      Trash2: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+      History: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+      ZoomIn: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>',
+      ZoomOut: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>'
+    };
+
+    const Icons = {};
+    for (const [name, path] of Object.entries(iconPaths)) {
+      Icons[name] = ({ size = 24, className = "" }) => (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} className={className} dangerouslySetInnerHTML={{ __html: path }} />
+      );
+    }
+    const { Camera, Upload, Sprout, ShieldAlert, Info, Leaf, Droplets, XCircle, CheckCircle2, RefreshCw, Loader2, MapPin, ChevronDown, ChevronUp, Globe, Ruler, Lock, Edit2, AlertTriangle, Bug, Save, ListIcon, ArrowLeft, Trash2, History, ZoomIn, ZoomOut } = Icons;
+
+
+    // --- Main Application Component ---
+    function App() {
+      const [view, setView] = useState('scan'); 
+      const [savedPlants, setSavedPlants] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('plant_doctor_saved')) || []; } 
+        catch { return []; }
+      });
+      const [updatingPlantId, setUpdatingPlantId] = useState(null);
+      const [selectedPlant, setSelectedPlant] = useState(null);
+      
+      const [imageSrc, setImageSrc] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState(null);
+      const [showCamera, setShowCamera] = useState(false);
+      const [showMoreInfo, setShowMoreInfo] = useState(false);
+      const [treatmentPref, setTreatmentPref] = useState('natural');
+      
+      const [location, setLocation] = useState(() => {
+        return localStorage.getItem('plant_doctor_location') || "";
+      });
+      const [isLocationLocked, setIsLocationLocked] = useState(() => {
+        return !!localStorage.getItem('plant_doctor_location');
+      });
+
+      const fileInputRef = useRef(null);
+      const cameraInputRef = useRef(null);
+      const videoRef = useRef(null);
+      const previewCanvasRef = useRef(null);
+      const streamRef = useRef(null);
+      const animationRef = useRef(null);
+      
+      const [zoom, setZoom] = useState(1);
+      const zoomRef = useRef(1);
+      const initialPinchDist = useRef(null);
+      const initialZoomRef = useRef(1);
+      const hasHardwareZoomRef = useRef(false);
+
+      useEffect(() => {
+        return () => stopCamera();
+      }, []);
+
+      useEffect(() => {
+        if (showCamera && videoRef.current && streamRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current.play().catch(e => console.error("Play error:", e));
+          };
+        }
+      }, [showCamera]);
+
+      useEffect(() => {
+        localStorage.setItem('plant_doctor_location', location);
+      }, [location]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('plant_doctor_saved', JSON.stringify(savedPlants));
+        } catch (e) {
+          console.warn("Storage full", e);
+        }
+      }, [savedPlants]);
+
+      const compressImage = (dataUrl, callback) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          let scale = 1;
+          if (img.width > MAX_WIDTH) {
+            scale = MAX_WIDTH / img.width;
+          }
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          callback(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.src = dataUrl;
+      };
+      
+      const saveCurrentPlant = () => {
+        if (!result) return;
+        const plantData = {
+          ...result,
+          imageSrc,
+          lastUpdated: new Date().toISOString()
+        };
+
+        if (updatingPlantId) {
+          setSavedPlants(prev => prev.map(p => p.id === updatingPlantId ? { ...p, ...plantData } : p));
+          setUpdatingPlantId(null);
+        } else {
+          setSavedPlants(prev => [{ id: Date.now().toString(), ...plantData }, ...prev]);
+        }
+        resetApp();
+        setView('list');
+      };
+
+      const deletePlant = (id) => {
+        if(window.confirm("Are you sure you want to delete this plant?")) {
+          setSavedPlants(prev => prev.filter(p => p.id !== id));
+          setView('list');
+        }
+      };
+
+      const startUpdate = (plant) => {
+          setUpdatingPlantId(plant.id);
+          setSelectedPlant(null);
+          setView('scan');
+      };
+
+      const fetchWithRetry = async (url, options, retries = 5) => {
+        const delays = [1000, 2000, 4000, 8000, 16000];
+        for (let i = 0; i < retries; i++) {
+          try {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+              const errData = await response.json().catch(() => ({}));
+              throw new Error(errData.error?.message || `HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+          } catch (e) {
+            if (i === retries - 1) throw e;
+            await new Promise(r => setTimeout(r, delays[i]));
+          }
+        }
+      };
+
+      const analyzePlant = async (base64Data, mimeType) => {
+        setLoading(true);
+        setError(null);
+        setResult(null);
+        setShowMoreInfo(false);
+
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+          
+          const prompt = `
+            You are an expert botanist, gardener, plant pathologist, and turfgrass specialist. Analyze the provided image.
+            ${isLocationLocked && location ? `The user is located in or near: ${location}. Use this geographical context to assist in accurate identification.` : ''}
+            ${updatingPlantId ? `NOTE: The user is providing a new updated photo of a previously diagnosed plant to check its current status.` : ''}
+            1. Determine if the image contains a plant or lawn/turf. If not, set isPlant to false.
+            2. Identify the plant or grass type (Common name and Scientific name).
+            3. Classify its category as either a 'Weed' (invasive, typical nuisance), 'Desirable' (houseplant, garden plant, crop), or 'Lawn' (turfgrass).
+            4. Assess its health. Set healthStatus to 'Healthy', 'Sick' (includes pests, diseases, fungus, nutrient deficiencies, or dead patches), or 'Unknown'.
+            5. If 'Sick', identify the specific issue in 'diseaseOrPest' (e.g., 'Powdery Mildew', 'Brown Patch', 'Aphids', 'Nitrogen Deficiency').
+            6. Provide a short description of the plant/lawn and its current state.
+            7. Provide actionableAdvice as an object containing three arrays: 
+               - 'natural': Natural, organic, or chemical-free treatments (if it is a 'Weed' or 'Sick').
+               - 'chemical': Synthetic, conventional, or chemical treatments (if it is a 'Weed' or 'Sick').
+               - 'general': General care instructions (water, light, soil) if it is 'Healthy' (Desirable or Lawn).
+            8. Provide the natural habitat/where it grows, and its average mature size.
+          `;
+
+          const payload = {
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: prompt },
+                  { inlineData: { mimeType: mimeType, data: base64Data } }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  isPlant: { type: "BOOLEAN" },
+                  name: { type: "STRING" },
+                  scientificName: { type: "STRING" },
+                  category: { type: "STRING", description: "Must be 'Weed', 'Desirable', 'Lawn', or 'Unknown'" },
+                  healthStatus: { type: "STRING", description: "Must be 'Healthy', 'Sick', or 'Unknown'" },
+                  diseaseOrPest: { type: "STRING", description: "Name of the disease, pest, or issue if healthStatus is 'Sick'." },
+                  description: { type: "STRING" },
+                  actionableAdvice: {
+                    type: "OBJECT",
+                    properties: {
+                      natural: { type: "ARRAY", items: { type: "STRING" } },
+                      chemical: { type: "ARRAY", items: { type: "STRING" } },
+                      general: { type: "ARRAY", items: { type: "STRING" } }
+                    },
+                    description: "Categorized advice based on treatment type or general care."
+                  },
+                  growthLocation: { type: "STRING", description: "Where this typically grows, native regions, and habitats." },
+                  averageSize: { type: "STRING", description: "Average mature size (height and spread)." }
+                },
+                required: ["isPlant", "name", "category", "healthStatus", "actionableAdvice", "growthLocation", "averageSize"]
+              }
+            }
+          };
+
+          const data = await fetchWithRetry(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!responseText) {
+            throw new Error("Failed to parse response from AI.");
+          }
+
+          const parsedResult = JSON.parse(responseText);
+          setResult(parsedResult);
+          setTreatmentPref('natural'); // Reset toggle to natural first
+        } catch (err) {
+          console.error(err);
+          setError(err.message || "An error occurred while analyzing the plant. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          compressImage(reader.result, (compressedDataUrl) => {
+            setImageSrc(compressedDataUrl);
+            const base64Data = compressedDataUrl.split(',')[1];
+            analyzePlant(base64Data, 'image/jpeg');
+          });
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const resetApp = () => {
+        setImageSrc(null);
+        setResult(null);
+        setError(null);
+        setShowMoreInfo(false);
+        setUpdatingPlantId(null);
+        stopCamera();
+      };
+
+      const startCamera = async () => {
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("Camera API not supported");
+          }
+          
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+              video: { 
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+              } 
+            });
+          } catch (e1) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            } catch (e2) {
+              stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
+          }
+          
+          streamRef.current = stream;
+          setShowCamera(true);
+
+          const track = stream.getVideoTracks()[0];
+          if (track && track.getCapabilities) {
+            try {
+              const caps = track.getCapabilities();
+              hasHardwareZoomRef.current = !!caps.zoom;
+              
+              if (caps.zoom) {
+                const settings = track.getSettings();
+                const defaultZoom = settings.zoom || 1;
+                setZoom(defaultZoom);
+                zoomRef.current = defaultZoom;
+              } else {
+                setZoom(1);
+                zoomRef.current = 1;
+              }
+            } catch (e) {
+              hasHardwareZoomRef.current = false;
+              setZoom(1);
+              zoomRef.current = 1;
+            }
+          } else {
+            hasHardwareZoomRef.current = false;
+            setZoom(1);
+            zoomRef.current = 1;
+          }
+        } catch (err) {
+          console.warn("In-app camera failed or denied, falling back to native picker:", err);
+          cameraInputRef.current?.click();
+        }
+      };
+
+      const stopCamera = () => {
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        setShowCamera(false);
+      };
+
+      const startDrawLoop = () => {
+        const video = videoRef.current;
+        const canvas = previewCanvasRef.current;
+        if (!video || !canvas) return;
+
+        const draw = () => {
+          if (!videoRef.current || !previewCanvasRef.current) return;
+          
+          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+          }
+
+          if (canvas.width > 0 && canvas.height > 0) {
+            const ctx = canvas.getContext('2d');
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            
+            const z = hasHardwareZoomRef.current ? 1 : zoomRef.current; 
+            
+            const sw = w / z;
+            const sh = h / z;
+            const sx = (w - sw) / 2;
+            const sy = (h - sh) / 2;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+          }
+
+          animationRef.current = requestAnimationFrame(draw);
+        };
+        
+        draw();
+      };
+
+      const handleZoomUpdate = (newZoom) => {
+        setZoom(newZoom);
+        zoomRef.current = newZoom;
+
+        if (streamRef.current && hasHardwareZoomRef.current) {
+          const track = streamRef.current.getVideoTracks()[0];
+          track.applyConstraints({ advanced: [{ zoom: newZoom }] })
+               .catch(err => console.error("Hardware zoom failed", err));
+        }
+      };
+
+      const getPinchDistance = (touches) => {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      };
+
+      const handleTouchStart = (e) => {
+        if (e.touches.length === 2) {
+          initialPinchDist.current = getPinchDistance(e.touches);
+          initialZoomRef.current = zoomRef.current;
+        }
+      };
+
+      const handleTouchMove = (e) => {
+        if (e.touches.length === 2 && initialPinchDist.current) {
+          e.preventDefault(); 
+          const currentDist = getPinchDistance(e.touches);
+          const scale = currentDist / initialPinchDist.current;
+          
+          let newZoom = initialZoomRef.current * scale;
+          newZoom = Math.max(1, Math.min(newZoom, 5));
+          
+          handleZoomUpdate(newZoom);
+        }
+      };
+
+      const handleTouchEnd = (e) => {
+        if (e.touches.length < 2) {
+          initialPinchDist.current = null;
+        }
+      };
+
+      const capturePhoto = () => {
+        if (previewCanvasRef.current) {
+          const rawDataUrl = previewCanvasRef.current.toDataURL('image/jpeg', 0.8);
+          compressImage(rawDataUrl, (compressedDataUrl) => {
+            setImageSrc(compressedDataUrl);
+            const base64Data = compressedDataUrl.split(',')[1];
+            stopCamera();
+            analyzePlant(base64Data, 'image/jpeg');
+          });
+        }
+      };
+
+      const renderPlantDetails = (dataObj) => (
+        <div className="animate-in slide-in-from-bottom-4 duration-500 space-y-4 mt-4">
+          {!dataObj.isPlant ? (
+            <div className="bg-orange-50 border border-orange-200 p-6 rounded-3xl text-center">
+              <div className="w-16 h-16 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert size={32} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">No Plant Detected</h2>
+              <p className="text-gray-600">We couldn't clearly identify a plant or lawn in this image. Please try taking another photo with good lighting and clear focus.</p>
+            </div>
+          ) : (
+            <>
+              {/* Header Card */}
+              <div className="bg-white p-6 rounded-3xl shadow-md border-t-4" 
+                    style={{ borderTopColor: dataObj.category === 'Weed' ? '#ef4444' : (dataObj.healthStatus === 'Sick' ? '#f59e0b' : '#10b981') }}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">{dataObj.name}</h2>
+                    <p className="text-sm italic text-gray-500">{dataObj.scientificName}</p>
+                  </div>
+                  <div className="flex flex-col gap-2 items-end">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${
+                      dataObj.category === 'Weed' 
+                        ? 'bg-red-100 text-red-700' 
+                        : dataObj.category === 'Lawn'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-green-100 text-green-700'
+                    }`}>
+                      {dataObj.category === 'Weed' ? <ShieldAlert size={14} /> : <CheckCircle2 size={14} />}
+                      {dataObj.category}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Health Warning Banner */}
+                {dataObj.healthStatus === 'Sick' && (
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl mt-4 flex items-start gap-3">
+                    <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                    <div>
+                      <h3 className="font-bold text-amber-800 text-sm">
+                        Health Alert: {dataObj.diseaseOrPest || "Issue Detected"}
+                      </h3>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        This {dataObj.category.toLowerCase()} appears to be unwell. See the treatment plan below.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-gray-600 text-sm mt-4 leading-relaxed">
+                  {dataObj.description}
+                </p>
+              </div>
+
+              {/* Actionable Advice Card */}
+              <div className="bg-white p-6 rounded-3xl shadow-md">
+                <div className="flex items-center gap-2 mb-4">
+                  {dataObj.category === 'Weed' ? (
+                    <div className="bg-red-100 p-2 rounded-lg text-red-600">
+                      <XCircle size={20} />
+                    </div>
+                  ) : dataObj.healthStatus === 'Sick' ? (
+                    <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
+                      <Bug size={20} />
+                    </div>
+                  ) : (
+                    <div className="bg-green-100 p-2 rounded-lg text-green-600">
+                      <Leaf size={20} />
+                    </div>
+                  )}
+                  <h3 className="font-bold text-gray-800 text-lg">
+                    {dataObj.category === 'Weed' ? 'Treatment & Eradication' : 
+                      dataObj.healthStatus === 'Sick' ? 'Cure & Treatment Plan' : 
+                      dataObj.category === 'Lawn' ? 'Lawn Care Instructions' : 
+                      'Care Instructions'}
+                  </h3>
+                </div>
+                
+                {(dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && !Array.isArray(dataObj.actionableAdvice) && (
+                  <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setTreatmentPref('natural')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${treatmentPref === 'natural' ? 'bg-white shadow-sm text-green-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Natural
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTreatmentPref('chemical')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${treatmentPref === 'chemical' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Chemical
+                    </button>
+                  </div>
+                )}
+                
+                <ul className="space-y-3">
+                  {(Array.isArray(dataObj.actionableAdvice) 
+                    ? dataObj.actionableAdvice 
+                    : (dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick' 
+                        ? (dataObj.actionableAdvice?.[treatmentPref] || []) 
+                        : (dataObj.actionableAdvice?.general || []))
+                  ).map((advice, idx) => (
+                    <li key={idx} className="flex gap-3 items-start bg-gray-50 p-3 rounded-xl">
+                      <div className="mt-0.5 text-gray-400">
+                        {dataObj.category === 'Weed' ? (
+                          <ShieldAlert size={16} className="text-red-400" />
+                        ) : dataObj.healthStatus === 'Sick' ? (
+                          <Bug size={16} className="text-amber-500" />
+                        ) : (
+                          <Droplets size={16} className="text-blue-400" />
+                        )}
+                      </div>
+                      <span className="text-sm text-gray-700 leading-relaxed">{advice}</span>
+                    </li>
+                  ))}
+                  
+                  {/* Empty state fallback */}
+                  {!Array.isArray(dataObj.actionableAdvice) && (dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && (!dataObj.actionableAdvice?.[treatmentPref] || dataObj.actionableAdvice[treatmentPref].length === 0) && (
+                    <li className="text-sm text-gray-500 italic p-3 text-center">No {treatmentPref} treatments found.</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* More Info Section */}
+              <button 
+                type="button"
+                onClick={() => setShowMoreInfo(!showMoreInfo)}
+                className="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-4 px-6 rounded-2xl shadow-sm transition-all flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2"><Info size={20} className="text-blue-500" /> More Info</span>
+                {showMoreInfo ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </button>
+
+              {showMoreInfo && (
+                <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-3xl animate-in slide-in-from-top-2 duration-300 space-y-5">
+                  <div>
+                    <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                      <Globe size={18} className="text-blue-600" /> Natural Habitat
+                    </h4>
+                    <p className="text-sm text-gray-700 leading-relaxed">{dataObj.growthLocation}</p>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                      <Ruler size={18} className="text-blue-600" /> Average Size
+                    </h4>
+                    <p className="text-sm text-gray-700 leading-relaxed">{dataObj.averageSize}</p>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen font-sans pb-12">
+          {/* Header */}
+          <header className="bg-white shadow-sm pt-8 pb-4 px-6 rounded-b-3xl sticky top-0 z-10">
+            <div className="max-w-md mx-auto flex items-center justify-between">
+              
+              {view === 'detail' ? (
+                <button 
+                  onClick={() => setView('list')} 
+                  className="p-2 -ml-2 text-gray-600 hover:bg-green-50 hover:text-green-600 rounded-full transition-colors flex flex-col items-center"
+                  title="Back to My Plants"
+                >
+                  <ArrowLeft size={24} />
+                </button>
+              ) : (
+                <button 
+                  onClick={() => { resetApp(); setView('scan'); }} 
+                  className={`p-2 -ml-2 rounded-full transition-colors flex flex-col items-center ${view === 'scan' ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                  title="Scanner"
+                >
+                  <Camera size={24} className={view === 'scan' ? 'fill-green-100' : ''} />
+                </button>
+              )}
+
+              <div className="flex items-center justify-center gap-2 flex-1">
+                <div className="bg-green-500 p-1.5 rounded-xl text-white shadow-md">
+                  <Sprout size={24} />
+                </div>
+                <h1 className="text-xl font-bold text-gray-800 tracking-tight">Plant Doctor</h1>
+              </div>
+              
+              <button 
+                onClick={() => { resetApp(); setView('list'); }} 
+                className={`p-2 -mr-2 rounded-full transition-colors flex flex-col items-center ${view === 'list' || view === 'detail' ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                title="My Plants"
+              >
+                <ListIcon size={24} className={view === 'list' || view === 'detail' ? 'fill-green-100' : ''} />
+              </button>
+              
+            </div>
+          </header>
+
+          <main className="max-w-md mx-auto mt-6 px-4">
+            
+            {/* VIEW: SCANNER */}
+            {view === 'scan' && (
+              <>
+                {updatingPlantId && !imageSrc && (
+                    <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-2xl mb-6 flex items-center gap-3 animate-in fade-in">
+                      <History size={20} className="text-blue-500 shrink-0" />
+                      <p className="text-sm font-medium">Take a new photo to update the health status of this plant.</p>
+                    </div>
+                )}
+
+                {showCamera && (
+                  <div 
+                    className="fixed inset-0 z-50 bg-black flex flex-col animate-in fade-in duration-300 touch-none"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                  >
+                    <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+                      <video 
+                        ref={videoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted
+                        onPlay={startDrawLoop}
+                        className="hidden"
+                      />
+                      <canvas 
+                        ref={previewCanvasRef}
+                        className="w-full h-full object-contain"
+                      />
+
+                      {zoom === 1 && (
+                        <div className="absolute top-16 bg-black/60 backdrop-blur-md text-white/90 px-4 py-2 rounded-full text-sm font-medium tracking-wide pointer-events-none animate-in fade-in zoom-in duration-500">
+                          Pinch to zoom
+                        </div>
+                      )}
+
+                      <div className="absolute bottom-0 left-0 w-full px-8 pb-6 pt-16 bg-gradient-to-t from-black/80 to-transparent flex items-center gap-4">
+                        <ZoomOut className="text-white/80 w-5 h-5 shrink-0" />
+                        <input 
+                          type="range" 
+                          min="1" 
+                          max="5" 
+                          step="0.1" 
+                          value={zoom} 
+                          onChange={(e) => handleZoomUpdate(parseFloat(e.target.value))}
+                          className="flex-1 accent-white"
+                        />
+                        <ZoomIn className="text-white/80 w-5 h-5 shrink-0" />
+                      </div>
+                    </div>
+                    
+                    <div className="bg-black pb-12 pt-6 px-6 flex justify-between items-center z-10">
+                      <button 
+                        type="button"
+                        onClick={stopCamera}
+                        className="text-white p-4 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                      >
+                        <XCircle size={32} />
+                      </button>
+                      
+                      <button 
+                        type="button"
+                        onClick={capturePhoto}
+                        className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1"
+                      >
+                        <div className="w-full h-full bg-white rounded-full active:bg-gray-300 transition-colors"></div>
+                      </button>
+                      
+                      <div className="w-16"></div>
+                    </div>
+                  </div>
+                )}
+
+                {!imageSrc && !loading && !showCamera && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="bg-white p-8 rounded-3xl shadow-xl shadow-green-900/5 text-center">
+                      <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Leaf className="text-green-500" size={40} />
+                      </div>
+                      <h2 className="text-xl font-bold text-gray-800 mb-3">Identify & Diagnose</h2>
+                      <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+                        Take a picture of a weed, plant, or your lawn to learn how to care for it, get rid of it, or cure any diseases!
+                      </p>
+
+                      <div className="mb-8 text-left">
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Location Context</label>
+                        {!isLocationLocked ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 flex items-center bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-200 transition-all">
+                              <MapPin size={20} className="text-gray-400 mr-3 shrink-0" />
+                              <input
+                                type="text"
+                                placeholder="e.g. Seattle, WA"
+                                value={location}
+                                onChange={(e) => setLocation(e.target.value)}
+                                onKeyDown={(e) => { if(e.key === 'Enter' && location.trim()) setIsLocationLocked(true); }}
+                                className="bg-transparent border-none outline-none w-full text-gray-700 placeholder-gray-400"
+                              />
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => setIsLocationLocked(true)}
+                              disabled={!location.trim()}
+                              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white p-3 rounded-2xl transition-colors shadow-sm"
+                              title="Lock Location"
+                            >
+                              <Lock size={20} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-2xl px-4 py-3 animate-in fade-in zoom-in-95 duration-200">
+                            <div className="flex items-center text-green-800">
+                              <MapPin size={20} className="mr-3 shrink-0 text-green-600" />
+                              <span className="font-medium truncate max-w-[200px]">{location}</span>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => setIsLocationLocked(false)}
+                              className="text-green-600 hover:text-green-800 p-2 bg-green-100 hover:bg-green-200 rounded-xl transition-colors"
+                              title="Edit Location"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                        {!isLocationLocked && <p className="text-xs text-gray-400 mt-2">Locking your location improves identification accuracy.</p>}
+                      </div>
+
+                      <div className="space-y-4">
+                        <button 
+                          type="button"
+                          onClick={startCamera}
+                          className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold py-4 px-6 rounded-2xl shadow-lg shadow-green-600/30 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Camera size={20} />
+                          Take a Photo
+                        </button>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          capture="environment" 
+                          ref={cameraInputRef} 
+                          className="hidden" 
+                          onChange={handleFileChange} 
+                        />
+
+                        <button 
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full bg-white border-2 border-gray-200 hover:border-green-300 hover:bg-green-50 text-gray-700 font-semibold py-4 px-6 rounded-2xl transition-all flex items-center justify-center gap-2"
+                        >
+                          <Upload size={20} className="text-gray-500" />
+                          Upload from Gallery
+                        </button>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          ref={fileInputRef} 
+                          className="hidden" 
+                          onChange={handleFileChange} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {imageSrc && (loading || result || error) && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="bg-white rounded-3xl p-3 shadow-xl shadow-green-900/5 overflow-hidden relative">
+                      <img 
+                        src={imageSrc} 
+                        alt="Selected plant" 
+                        className={`w-full h-64 object-cover rounded-2xl transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}
+                      />
+                      
+                      {loading && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-sm rounded-2xl m-3">
+                          <div className="bg-white p-4 rounded-full shadow-lg mb-4">
+                            <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
+                          </div>
+                          <p className="font-semibold text-gray-800 bg-white/90 px-4 py-1.5 rounded-full shadow-sm">
+                            Analyzing Plant...
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {error && (
+                      <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-2xl shadow-sm flex items-start gap-3">
+                        <XCircle className="text-red-500 shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="font-semibold text-red-800">Analysis Failed</h3>
+                          <p className="text-sm text-red-600 mt-1">{error}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {result && (
+                      <>
+                        {renderPlantDetails(result)}
+                        
+                        {result.isPlant && (
+                          <button 
+                            type="button"
+                            onClick={saveCurrentPlant}
+                            className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-green-600/30 transition-all flex items-center justify-center gap-2 mt-4"
+                          >
+                            <Save size={20} />
+                            {updatingPlantId ? 'Update Plant Status' : 'Save to My Plants'}
+                          </button>
+                        )}
+                        <button 
+                          type="button"
+                          onClick={resetApp}
+                          className="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-4 px-6 rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 mt-3"
+                        >
+                          <RefreshCw size={18} />
+                          {result.isPlant ? (updatingPlantId ? 'Discard Update' : 'Scan Another') : 'Try Again'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* VIEW: MY PLANTS LIST */}
+            {view === 'list' && (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 px-2">My Saved Plants</h2>
+                
+                {savedPlants.length === 0 ? (
+                  <div className="bg-white p-8 rounded-3xl shadow-sm text-center">
+                    <div className="w-20 h-20 bg-green-50 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Leaf size={32} />
+                    </div>
+                    <h3 className="font-bold text-gray-800 mb-2">No Plants Yet</h3>
+                    <p className="text-gray-500 text-sm mb-6">Scan your first plant, weed, or lawn area to track its health over time.</p>
+                    <button 
+                      onClick={() => { resetApp(); setView('scan'); }} 
+                      className="bg-green-100 text-green-700 hover:bg-green-200 font-semibold py-3 px-6 rounded-xl transition-colors inline-flex items-center gap-2"
+                    >
+                      <Camera size={18} /> Start Scanning
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    {savedPlants.map(plant => (
+                      <div 
+                        key={plant.id} 
+                        onClick={() => { setSelectedPlant(plant); setView('detail'); }}
+                        className="bg-white rounded-3xl p-3 shadow-md shadow-gray-200/50 cursor-pointer active:scale-95 transition-transform border border-gray-100"
+                      >
+                        <div className="relative">
+                          <img src={plant.imageSrc} className="w-full h-32 object-cover rounded-2xl mb-3 bg-gray-100" alt={plant.name} />
+                          <div className="absolute top-2 right-2 shadow-sm">
+                              {plant.healthStatus === 'Sick' || plant.category === 'Weed' ? (
+                                <div className="bg-white/90 backdrop-blur rounded-full p-1.5 text-amber-500"><AlertTriangle size={14} /></div>
+                              ) : (
+                                <div className="bg-white/90 backdrop-blur rounded-full p-1.5 text-green-500"><CheckCircle2 size={14} /></div>
+                              )}
+                          </div>
+                        </div>
+                        <h3 className="font-bold text-gray-800 text-sm truncate leading-tight mb-1 px-1">{plant.name}</h3>
+                        <p className="text-xs text-gray-500 px-1 truncate">
+                          {new Date(plant.lastUpdated).toLocaleDateString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VIEW: PLANT DETAIL */}
+            {view === 'detail' && selectedPlant && (
+              <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                <div className="bg-white rounded-3xl p-3 shadow-xl shadow-green-900/5 overflow-hidden relative">
+                    <img src={selectedPlant.imageSrc} className="w-full h-64 object-cover rounded-2xl" alt={selectedPlant.name} />
+                </div>
+                
+                {renderPlantDetails(selectedPlant)}
+
+                <div className="grid grid-cols-1 gap-3 pt-2">
+                  <button 
+                    onClick={() => startUpdate(selectedPlant)}
+                    className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw size={20} />
+                    Update Status (New Photo)
+                  </button>
+                  <button 
+                    onClick={() => deletePlant(selectedPlant.id)}
+                    className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-4 px-6 rounded-2xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <Trash2 size={20} />
+                    Delete Plant
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </main>
+        </div>
+      );
+    }
+
+    // Render the App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
