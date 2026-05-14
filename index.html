@@ -1,20 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  
-  <!-- Add this inside your <head> tag in index.html -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="PlantDoctor">
-<meta name="theme-color" content="#10b981">
-
-<!-- iOS Home Screen Icon -->
-<link rel="apple-touch-icon" sizes="180x180" href="icon.png">
-
-<!-- Android Manifest -->
-<link rel="manifest" href="manifest.json">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Plant Doctor App</title>
   
   <!-- Tailwind CSS -->
@@ -44,14 +34,14 @@
     @keyframes zoomIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
     @keyframes zoomIn95 { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
     
-    body { -webkit-tap-highlight-color: transparent; }
+    body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
   </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
+    const { useState, useRef, useEffect, useCallback } = React;
 
     // --- Inlined SVG Icons ---
     const iconPaths = {
@@ -82,7 +72,8 @@
       History: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
       ZoomIn: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>',
       ZoomOut: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>',
-      KeyIcon: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>'
+      KeyIcon: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>',
+      Download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'
     };
 
     const Icons = {};
@@ -91,10 +82,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={size} height={size} className={className} dangerouslySetInnerHTML={{ __html: path }} />
       );
     }
-    const { Camera, Upload, Sprout, ShieldAlert, Info, Leaf, Droplets, XCircle, CheckCircle2, RefreshCw, Loader2, MapPin, ChevronDown, ChevronUp, Globe, Ruler, Lock, Edit2, AlertTriangle, Bug, Save, ListIcon, ArrowLeft, Trash2, History, ZoomIn, ZoomOut, KeyIcon } = Icons;
+    const { Camera, Upload, Sprout, ShieldAlert, Info, Leaf, Droplets, XCircle, CheckCircle2, RefreshCw, Loader2, MapPin, ChevronDown, ChevronUp, Globe, Ruler, Lock, Edit2, AlertTriangle, Bug, Save, ListIcon, ArrowLeft, Trash2, History, ZoomIn, ZoomOut, KeyIcon, Download } = Icons;
 
-
-    // --- Main Application Component ---
     function App() {
       // Dynamic API Key State
       const [apiKey, setApiKey] = useState(() => localStorage.getItem('plant_doctor_api_key') || "");
@@ -123,6 +112,7 @@
         return !!localStorage.getItem('plant_doctor_location');
       });
 
+      // Camera & Canvas Refs
       const fileInputRef = useRef(null);
       const cameraInputRef = useRef(null);
       const videoRef = useRef(null);
@@ -140,12 +130,21 @@
         return () => stopCamera();
       }, []);
 
+      // Improved Camera Mounting to fix initial tap black screen
       useEffect(() => {
         if (showCamera && videoRef.current && streamRef.current) {
-          videoRef.current.srcObject = streamRef.current;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current.play().catch(e => console.error("Play error:", e));
+          const video = videoRef.current;
+          video.srcObject = streamRef.current;
+          const playVideo = async () => {
+            try {
+              await video.play();
+              startDrawLoop();
+            } catch (e) {
+              console.error("Autoplay failed, retrying...", e);
+              setTimeout(playVideo, 100);
+            }
           };
+          playVideo();
         }
       }, [showCamera]);
 
@@ -161,15 +160,58 @@
         }
       }, [savedPlants]);
 
+      // Unified backup function. Triggered automatically on save, or manually.
+      const triggerBackupDownload = (plantsToSave, currentKey, currentLocation) => {
+        const data = {
+          apiKey: currentKey,
+          location: currentLocation,
+          savedPlants: plantsToSave
+        };
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Keeping the exact same filename helps the OS suggest "Replace" instead of making new copies.
+        a.download = `plant-doctor-backup.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      // Auto-imports everything and closes the modal seamlessly.
+      const importData = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (data.apiKey) {
+              setApiKey(data.apiKey);
+              localStorage.setItem('plant_doctor_api_key', data.apiKey);
+            }
+            if (data.location) {
+              setLocation(data.location);
+              localStorage.setItem('plant_doctor_location', data.location);
+            }
+            if (data.savedPlants) {
+              setSavedPlants(data.savedPlants);
+              localStorage.setItem('plant_doctor_saved', JSON.stringify(data.savedPlants));
+            }
+            setShowApiModal(false);
+          } catch (err) {
+            alert("Error reading backup file.");
+          }
+        };
+        reader.readAsText(file);
+      };
+
       const compressImage = (dataUrl, callback) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 800;
           let scale = 1;
-          if (img.width > MAX_WIDTH) {
-            scale = MAX_WIDTH / img.width;
-          }
+          if (img.width > MAX_WIDTH) scale = MAX_WIDTH / img.width;
           canvas.width = img.width * scale;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
@@ -181,25 +223,30 @@
       
       const saveCurrentPlant = () => {
         if (!result) return;
-        const plantData = {
-          ...result,
-          imageSrc,
-          lastUpdated: new Date().toISOString()
-        };
-
+        const plantData = { ...result, imageSrc, lastUpdated: new Date().toISOString() };
+        let newPlants;
         if (updatingPlantId) {
-          setSavedPlants(prev => prev.map(p => p.id === updatingPlantId ? { ...p, ...plantData } : p));
+          newPlants = savedPlants.map(p => p.id === updatingPlantId ? { ...p, ...plantData } : p);
           setUpdatingPlantId(null);
         } else {
-          setSavedPlants(prev => [{ id: Date.now().toString(), ...plantData }, ...prev]);
+          newPlants = [{ id: Date.now().toString(), ...plantData }, ...savedPlants];
         }
+        
+        setSavedPlants(newPlants);
+        
+        // Auto-export on save to overwrite the backup file
+        triggerBackupDownload(newPlants, apiKey, location);
+        
         resetApp();
         setView('list');
       };
 
       const deletePlant = (id) => {
         if(window.confirm("Are you sure you want to delete this plant?")) {
-          setSavedPlants(prev => prev.filter(p => p.id !== id));
+          const newPlants = savedPlants.filter(p => p.id !== id);
+          setSavedPlants(newPlants);
+          // Auto-backup when deleting
+          triggerBackupDownload(newPlants, apiKey, location);
           setView('list');
         }
       };
@@ -260,15 +307,7 @@
           `;
 
           const payload = {
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  { text: prompt },
-                  { inlineData: { mimeType: mimeType, data: base64Data } }
-                ]
-              }
-            ],
+            contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: mimeType, data: base64Data } }] }],
             generationConfig: {
               responseMimeType: "application/json",
               responseSchema: {
@@ -578,7 +617,7 @@
                   </h3>
                 </div>
                 
-                {(dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && !Array.isArray(dataObj.actionableAdvice) && (
+                {(dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && (
                   <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
                     <button
                       type="button"
@@ -598,11 +637,9 @@
                 )}
                 
                 <ul className="space-y-3">
-                  {(Array.isArray(dataObj.actionableAdvice) 
-                    ? dataObj.actionableAdvice 
-                    : (dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick' 
-                        ? (dataObj.actionableAdvice?.[treatmentPref] || []) 
-                        : (dataObj.actionableAdvice?.general || []))
+                  {(dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick' 
+                    ? (dataObj.actionableAdvice?.[treatmentPref] || []) 
+                    : (dataObj.actionableAdvice?.general || [])
                   ).map((advice, idx) => (
                     <li key={idx} className="flex gap-3 items-start bg-gray-50 p-3 rounded-xl">
                       <div className="mt-0.5 text-gray-400">
@@ -619,7 +656,7 @@
                   ))}
                   
                   {/* Empty state fallback */}
-                  {!Array.isArray(dataObj.actionableAdvice) && (dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && (!dataObj.actionableAdvice?.[treatmentPref] || dataObj.actionableAdvice[treatmentPref].length === 0) && (
+                  {(dataObj.category === 'Weed' || dataObj.healthStatus === 'Sick') && (!dataObj.actionableAdvice?.[treatmentPref] || dataObj.actionableAdvice[treatmentPref].length === 0) && (
                     <li className="text-sm text-gray-500 italic p-3 text-center">No {treatmentPref} treatments found.</li>
                   )}
                 </ul>
@@ -660,95 +697,55 @@
       return (
         <div className="min-h-screen font-sans pb-12 relative">
           
-          {/* API Key Modal */}
+          {/* Settings & Restore Modal */}
           {showApiModal && (
             <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-                <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="bg-green-100 text-green-600 p-2 rounded-full">
-                        <KeyIcon size={24} />
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-800">API Key Required</h3>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                        To keep this app secure on GitHub, enter your Gemini API key below. It will be saved securely in your browser and never uploaded.
-                    </p>
-                    <input 
-                        type="password" 
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="AIzaSy..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 focus:ring-2 focus:ring-green-500 outline-none"
-                    />
-                    <div className="flex gap-3">
-                        <button 
-                            onClick={() => {
-                                localStorage.setItem('plant_doctor_api_key', apiKey);
-                                setShowApiModal(false);
-                            }}
-                            className="flex-1 bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 transition-colors"
-                        >
-                            Save Key
-                        </button>
-                        {localStorage.getItem('plant_doctor_api_key') && (
-                            <button 
-                                onClick={() => setShowApiModal(false)}
-                                className="px-4 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors"
-                            >
-                                Close
-                            </button>
-                        )}
-                    </div>
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="bg-green-100 text-green-600 p-2 rounded-full"><KeyIcon size={24} /></div>
+                  <h3 className="text-xl font-bold text-gray-800">Settings & Restore</h3>
                 </div>
+                <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+                  Browsers occasionally clear local memory. Restore your saved plants and API key in one click.
+                </p>
+
+                <label className="flex items-center justify-center bg-green-600 text-white font-bold py-4 rounded-xl cursor-pointer hover:bg-green-700 transition-colors mb-5 shadow-lg shadow-green-600/30">
+                  <Upload size={20} className="mr-2" />
+                  Restore from Backup File
+                  <input type="file" accept=".json" onChange={importData} className="hidden" />
+                </label>
+
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="h-px bg-gray-200 flex-1"></div>
+                  <span className="text-xs font-bold text-gray-400 uppercase">Or edit manually</span>
+                  <div className="h-px bg-gray-200 flex-1"></div>
+                </div>
+
+                <label className="block text-xs font-bold text-gray-400 mb-1">GEMINI API KEY</label>
+                <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 focus:ring-2 focus:ring-green-500 outline-none" />
+                
+                <div className="flex gap-3">
+                  <button onClick={() => { localStorage.setItem('plant_doctor_api_key', apiKey); setShowApiModal(false); }} className="flex-1 bg-gray-800 text-white font-bold py-3 rounded-xl hover:bg-gray-900 transition-colors">
+                    Save Key
+                  </button>
+                  {localStorage.getItem('plant_doctor_api_key') && (
+                    <button onClick={() => setShowApiModal(false)} className="px-4 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors">
+                      Cancel
+                    </button>
+                  )}
+                </div>
+                
+                <button onClick={() => triggerBackupDownload(savedPlants, apiKey, location)} className="w-full mt-4 text-xs font-bold text-gray-400 hover:text-green-600 transition-colors flex items-center justify-center gap-1">
+                  <Download size={14} /> Download current backup manually
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Header */}
-          <header className="bg-white shadow-sm pt-8 pb-4 px-6 rounded-b-3xl sticky top-0 z-10">
-            <div className="max-w-md mx-auto flex items-center justify-between">
-              
-              {view === 'detail' ? (
-                <button 
-                  onClick={() => setView('list')} 
-                  className="p-2 -ml-2 text-gray-600 hover:bg-green-50 hover:text-green-600 rounded-full transition-colors flex flex-col items-center"
-                  title="Back to My Plants"
-                >
-                  <ArrowLeft size={24} />
-                </button>
-              ) : (
-                <button 
-                  onClick={() => { resetApp(); setView('scan'); }} 
-                  className={`p-2 -ml-2 rounded-full transition-colors flex flex-col items-center ${view === 'scan' ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
-                  title="Scanner"
-                >
-                  <Camera size={24} className={view === 'scan' ? 'fill-green-100' : ''} />
-                </button>
-              )}
-
-              <div className="flex items-center justify-center gap-2 flex-1">
-                <div className="bg-green-500 p-1.5 rounded-xl text-white shadow-md">
-                  <Sprout size={24} />
-                </div>
-                <h1 className="text-xl font-bold text-gray-800 tracking-tight">Plant Doctor</h1>
-              </div>
-              
-              <div className="flex items-center gap-1">
-                <button 
-                  onClick={() => setShowApiModal(true)} 
-                  className="p-2 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
-                  title="Settings / API Key"
-                >
-                  <KeyIcon size={20} />
-                </button>
-                <button 
-                  onClick={() => { resetApp(); setView('list'); }} 
-                  className={`p-2 -mr-2 rounded-full transition-colors flex flex-col items-center ${view === 'list' || view === 'detail' ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
-                  title="My Plants"
-                >
-                  <ListIcon size={24} className={view === 'list' || view === 'detail' ? 'fill-green-100' : ''} />
-                </button>
-              </div>
-            </div>
+          <header className="bg-white shadow-sm pt-8 pb-4 px-6 rounded-b-3xl sticky top-0 z-10 flex items-center justify-between">
+            <button onClick={() => { view === 'detail' ? setView('list') : (resetApp(), setView('scan')) }} className={`p-2 rounded-full ${view === 'scan' ? 'text-green-600' : 'text-gray-400'}`}>{view === 'detail' ? <ArrowLeft size={24} /> : <Camera size={24} />}</button>
+            <div className="flex items-center gap-2"><div className="bg-green-500 p-1.5 rounded-xl text-white shadow-md"><Sprout size={24} /></div><h1 className="text-xl font-bold text-gray-800">Plant Doctor</h1></div>
+            <div className="flex items-center gap-1"><button onClick={() => setShowApiModal(true)} className="p-2 text-gray-400"><KeyIcon size={20} /></button><button onClick={() => { resetApp(); setView('list'); }} className={`p-2 rounded-full ${view === 'list' || view === 'detail' ? 'text-green-600' : 'text-gray-400'}`}><ListIcon size={24} /></button></div>
           </header>
 
           <main className="max-w-md mx-auto mt-6 px-4">
@@ -773,10 +770,8 @@
                     <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
                       <video 
                         ref={videoRef} 
-                        autoPlay 
                         playsInline 
                         muted
-                        onPlay={startDrawLoop}
                         className="hidden"
                       />
                       <canvas 
@@ -962,7 +957,7 @@
                             className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-green-600/30 transition-all flex items-center justify-center gap-2 mt-4"
                           >
                             <Save size={20} />
-                            {updatingPlantId ? 'Update Plant Status' : 'Save to My Plants'}
+                            {updatingPlantId ? 'Update Plant Status' : 'Save Plant & Backup'}
                           </button>
                         )}
                         <button 
@@ -1037,20 +1032,20 @@
                 
                 {renderPlantDetails(selectedPlant)}
 
-                <div className="grid grid-cols-1 gap-3 pt-2">
+                <div className="flex gap-3 pt-2">
                   <button 
                     onClick={() => startUpdate(selectedPlant)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
                   >
                     <RefreshCw size={20} />
-                    Update Status (New Photo)
+                    Update Status
                   </button>
                   <button 
                     onClick={() => deletePlant(selectedPlant.id)}
-                    className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-4 px-6 rounded-2xl transition-all flex items-center justify-center gap-2"
+                    className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2"
                   >
                     <Trash2 size={20} />
-                    Delete Plant
+                    Delete
                   </button>
                 </div>
               </div>
