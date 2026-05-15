@@ -112,14 +112,12 @@
       const [updatingPlantId, setUpdatingPlantId] = useState(() => sessionStorage.getItem('plant_doctor_updating_id') || null);
       const [selectedPlant, setSelectedPlant] = useState(null);
       const [plantToDelete, setPlantToDelete] = useState(null);
+      const [duplicateImageError, setDuplicateImageError] = useState(false);
       
-      // 4. Analysis & Result State
       const [imageSrc, setImageSrc] = useState(null);
       const [loading, setLoading] = useState(false);
       const [result, setResult] = useState(null);
       const [error, setError] = useState(null);
-      const [showMoreInfo, setShowMoreInfo] = useState(false);
-      const [treatmentPref, setTreatmentPref] = useState('natural');
       
       // 5. Context State
       const [location, setLocation] = useState(() => localStorage.getItem('plant_doctor_location') || "");
@@ -127,13 +125,17 @@
 
       // 6. Camera & Hardware Refs
       const [showCamera, setShowCamera] = useState(false);
+      const [showMoreInfo, setShowMoreInfo] = useState(false);
+      const [showSaveHelp, setShowSaveHelp] = useState(false);
+      const [treatmentPref, setTreatmentPref] = useState('natural');
+      
       const fileInputRef = useRef(null);
       const cameraInputRef = useRef(null);
       const videoRef = useRef(null);
       const previewCanvasRef = useRef(null);
       const streamRef = useRef(null);
       const animationRef = useRef(null);
-      
+
       const [zoom, setZoom] = useState(1);
       const zoomRef = useRef(1);
       const initialPinchDist = useRef(null);
@@ -148,16 +150,20 @@
         if (showCamera && videoRef.current && streamRef.current) {
           const video = videoRef.current;
           video.srcObject = streamRef.current;
-          const playVideo = async () => {
-            try {
-              await video.play();
+          
+          // FIX: Wait for the camera metadata to fully load before pressing play
+          video.onloadedmetadata = () => {
+            video.play().then(() => {
               startDrawLoop();
-            } catch (e) {
+            }).catch(e => {
               console.error("Autoplay failed, retrying...", e);
-              setTimeout(playVideo, 100);
-            }
+              setTimeout(() => {
+                if (videoRef.current) {
+                  videoRef.current.play().then(startDrawLoop).catch(console.error);
+                }
+              }, 250);
+            });
           };
-          playVideo();
         }
       }, [showCamera]);
 
@@ -178,26 +184,51 @@
       }, [location]);
       
       useEffect(() => {
-        try { 
-          localStorage.setItem('plant_doctor_saved', JSON.stringify(savedPlants)); 
-        } catch (e) { 
-          console.warn("Storage full", e); 
-        }
+        try { localStorage.setItem('plant_doctor_saved', JSON.stringify(savedPlants)); } 
+        catch (e) { console.warn("Storage full", e); }
       }, [savedPlants]);
 
-      const triggerBackupDownload = (plantsToSave, currentKey, currentLocation) => {
-        const data = { 
-          apiKey: currentKey, 
-          location: currentLocation, 
-          savedPlants: plantsToSave 
-        };
+      const triggerBackupDownload = async (plantsToSave, currentKey, currentLocation) => {
+        const data = { apiKey: currentKey, location: currentLocation, savedPlants: plantsToSave };
         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `plant-doctor-backup.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const fileName = `plant-doctor-backup.json`;
+        
+        let useFallback = true;
+
+        // 1. Try to use the modern File System Access API (Allows true Overwriting)
+        if (window.showSaveFilePicker) {
+          try {
+            const handle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [{ description: 'JSON Backup', accept: { 'application/json': ['.json'] } }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            useFallback = false; // Success! We don't need the fallback.
+          } catch (err) {
+            // If the user actively clicked "Cancel" on the save prompt, just stop completely.
+            if (err.name === 'AbortError') return; 
+            
+            // Otherwise (e.g. browser blocked it), log the error and let it proceed to the fallback below.
+            console.warn("Advanced save blocked or failed, moving to fallback.", err);
+          }
+        }
+
+        // 2. Fallback for iPhones/Safari/Restricted Browsers (Appends Date & Time)
+        if (useFallback) {
+          const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+          const fallbackFileName = `plant-backup-${dateStr}.json`;
+          
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fallbackFileName;
+          document.body.appendChild(a); // Required for some browsers to trigger click
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
       };
 
       const importData = (e) => {
@@ -285,30 +316,15 @@
       };
 
       const analyzePlant = async (base64Data, mimeType) => {
-        if (!apiKey) { 
-          setShowApiModal(true); 
-          return; 
-        }
-        
-        setLoading(true); 
-        setError(null); 
-        setResult(null); 
-        setShowMoreInfo(false);
+        if (!apiKey) { setShowApiModal(true); return; }
+        setLoading(true); setError(null); setResult(null); setShowMoreInfo(false);
         
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
           const prompt = `Expert Botanist & Turf Specialist: 1. isPlant 2. Name 3. Cat (Weed/Desirable/Lawn) 4. Health (Healthy/Sick) 5. diseaseOrPest 6. Short Desc 7. AdviceObj (natural, chemical, general) 8. growthLocation & averageSize. JSON response.`;
           
           const payload = {
-            contents: [
-              { 
-                role: "user", 
-                parts: [
-                  { text: prompt }, 
-                  { inlineData: { mimeType, data: base64Data } }
-                ] 
-              }
-            ],
+            contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
             generationConfig: { 
               responseMimeType: "application/json",
               responseSchema: {
@@ -336,12 +352,7 @@
             }
           };
           
-          const response = await fetch(url, { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify(payload) 
-          });
-          
+          const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const data = await response.json();
           if (data.error) throw new Error(data.error.message);
           
@@ -358,9 +369,22 @@
       const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        
+        // FIX: Clear the input memory so you can select the exact same file again if it fails
+        e.target.value = '';
+
         const reader = new FileReader();
         reader.onloadend = () => {
           compressImage(reader.result, (comp) => {
+            // Prevent user from selecting the exact same picture when updating
+            if (updatingPlantId) {
+              const p = savedPlants.find(plant => plant.id === updatingPlantId);
+              if (p && p.imageSrc === comp) {
+                setDuplicateImageError(true);
+                return; // Stop the process so the app doesn't hang
+              }
+            }
+            
             setImageSrc(comp);
             analyzePlant(comp.split(',')[1], 'image/jpeg');
           });
@@ -368,14 +392,7 @@
         reader.readAsDataURL(file);
       };
 
-      const resetApp = () => { 
-        setImageSrc(null); 
-        setResult(null); 
-        setError(null); 
-        setShowMoreInfo(false); 
-        setUpdatingPlantId(null); 
-        stopCamera(); 
-      };
+      const resetApp = () => { setImageSrc(null); setResult(null); setError(null); setShowMoreInfo(false); setShowSaveHelp(false); setUpdatingPlantId(null); stopCamera(); };
 
       const startCamera = async () => {
         try {
@@ -566,6 +583,27 @@
       return (
         <div className="min-h-screen font-sans pb-12 relative">
           
+          {/* Duplicate Image Error Modal */}
+          {duplicateImageError && (
+            <div className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="flex flex-col items-center text-center mb-6 mt-2">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">Same Photo Selected</h3>
+                  <p className="text-sm text-gray-500">It looks like you used the original picture. Please choose a different file and redo it so we can assess the plant's updated health!</p>
+                </div>
+                <button 
+                  onClick={() => setDuplicateImageError(false)} 
+                  className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-2xl hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/30"
+                >
+                  Okay, got it
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Delete Confirmation Modal */}
           {plantToDelete && (
             <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
@@ -726,7 +764,7 @@
                 {showCamera && (
                   <div className="fixed inset-0 z-50 bg-black flex flex-col touch-none animate-in fade-in" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
                     <div className="flex-1 relative bg-black overflow-hidden flex items-center">
-                      <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+                      <video ref={videoRef} autoPlay playsInline muted className="absolute opacity-0 w-[1px] h-[1px] pointer-events-none" />
                       <canvas ref={previewCanvasRef} className="w-full h-full object-contain" />
                       
                       {zoom === 1 && (
@@ -934,13 +972,34 @@
                       <>
                         {renderPlantDetails(result)}
                         {result.isPlant && (
-                          <button 
-                            onClick={saveCurrentPlant} 
-                            className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-green-600/20 mt-4 flex items-center justify-center gap-2 hover:bg-green-700 transition"
-                          >
-                            <Save size={20} /> 
-                            {updatingPlantId ? 'Update Plant Status' : 'Save Plant & Backup'}
-                          </button>
+                          <div className="mt-4">
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={saveCurrentPlant} 
+                                className="flex-1 bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-green-600/20 flex items-center justify-center gap-2 hover:bg-green-700 transition"
+                              >
+                                <Save size={20} /> 
+                                {updatingPlantId ? 'Update Plant Status' : 'Save Plant & Backup'}
+                              </button>
+                              <button 
+                                onClick={() => setShowSaveHelp(!showSaveHelp)} 
+                                className="bg-white border-2 border-green-100 text-green-600 px-4 rounded-2xl shadow-sm flex items-center justify-center hover:bg-green-50 transition"
+                              >
+                                <Info size={24} />
+                              </button>
+                            </div>
+                            
+                            {showSaveHelp && (
+                              <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl mt-3 animate-in slide-in-from-top-2">
+                                <h4 className="font-bold text-blue-800 text-sm mb-1 flex items-center gap-1">
+                                  <Info size={16} /> File Saving Tip
+                                </h4>
+                                <p className="text-xs text-blue-700 leading-relaxed">
+                                  To stop backup files from piling up, select your old <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-[10px]">plant-doctor-backup.json</code> file when your phone prompts you to save. It will ask if you want to <strong>"Replace"</strong> it—choose yes!
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         )}
                         <button 
                           onClick={resetApp} 
